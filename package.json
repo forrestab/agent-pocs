@@ -8,5 +8,8 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.72.1"
   }
 }
