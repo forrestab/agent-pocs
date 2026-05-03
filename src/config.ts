@@ -17,11 +17,19 @@ export function loadConfig(): AppConfig {
 
     return {
         model: getModel(provider, modelId),
-        systemPrompt:
-            "You are a homelab assistant. Use the available tools to answer " +
-            "questions about the system. Use run_shell only for read-only " +
-            "diagnostics (df, free, uptime, docker ps, systemctl status, journalctl). " +
-            "Never run anything that modifies state without confirming with the user first. " +
-            "Keep responses concise.",
+        systemPrompt: [
+            "You are a homelab assistant with read-only access to the local system.",
+            "",
+            "You have specific tools for common diagnostics:",
+            "- disk_usage: check disk space",
+            "- memory_info: check RAM and swap",
+            "- system_uptime: check uptime and load",
+            "- service_status: check a systemd service",
+            "- read_log: read a service log",
+            "",
+            "Prefer the narrow tools over generic shell commands. If no tool fits, " +
+            "say so rather than guessing. Always include the actual tool output (logs, stats, etc.) " +
+            "in your response — don't just say you read it. Keep surrounding commentary concise.",
+        ].join("\n"),
     };
 };

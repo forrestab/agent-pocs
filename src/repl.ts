@@ -6,8 +6,15 @@ async function main() {
     const agent = createAgent();
 
     agent.subscribe((event) => {
+        //process.stdout.write(`[event] ${JSON.stringify(event)}\n`);
+
         if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
             process.stdout.write(event.assistantMessageEvent.delta);
+        }
+
+        if (event.type === "tool_execution_end" && !event.isError) {
+            const text = event.result.content.find((c: any) => c.type === "text")?.text;
+            if (text) process.stdout.write(`\n[${event.toolName}]\n${text}\n`);
         }
 
         if (event.type === "message_update" && event.assistantMessageEvent.type === "error") {

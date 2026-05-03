@@ -2,7 +2,7 @@ import { Agent } from "@mariozechner/pi-agent-core";
 import { streamSimple } from "@mariozechner/pi-ai";
 
 import { loadConfig } from "./config";
-import { allTools } from "./tools";
+import { getTools } from "./tools";
 
 export function createAgent(): Agent {
     const config = loadConfig();
@@ -11,7 +11,7 @@ export function createAgent(): Agent {
         initialState: {
             systemPrompt: config.systemPrompt,
             model: config.model,
-            tools: allTools,
+            tools: getTools(),
             thinkingLevel: "off",
             messages: []
         },
