@@ -11,3 +11,6 @@ devenv.local.yaml
 
 # Bun
 node_modules
+
+# Misc
+.env.*
