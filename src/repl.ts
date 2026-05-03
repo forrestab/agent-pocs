@@ -4,6 +4,7 @@ import { createAgent } from "./agent";
 
 async function main() {
     const agent = createAgent();
+    const DEBUG = process.env.DEBUG === "true";
 
     agent.subscribe((event) => {
         //process.stdout.write(`[event] ${JSON.stringify(event)}\n`);
@@ -12,9 +13,15 @@ async function main() {
             process.stdout.write(event.assistantMessageEvent.delta);
         }
 
-        if (event.type === "tool_execution_end" && !event.isError) {
-            const text = event.result.content.find((c: any) => c.type === "text")?.text;
-            if (text) process.stdout.write(`\n[${event.toolName}]\n${text}\n`);
+        if (DEBUG) {
+            if (event.type === "tool_execution_start") {
+                process.stdout.write(`\n[${event.toolName}:start] ${JSON.stringify(event.args)}\n`);
+            }
+            
+            if (event.type === "tool_execution_end" && !event.isError) {
+                const resultStr = event.result.content.find((c: any) => c.type === "text")?.text;
+                process.stdout.write(`\n[${event.toolName}:end]\n${resultStr}\n`);
+            }
         }
 
         if (event.type === "message_update" && event.assistantMessageEvent.type === "error") {
