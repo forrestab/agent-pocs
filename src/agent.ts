@@ -16,12 +16,14 @@ export interface AgentBundle {
     newTraceId: () => string;
 }
 
-export async function createAgent(userId = "local"): Promise<AgentBundle> {
+export async function createAgent(userId = "local", customLogger?: AgentLogger): Promise<AgentBundle> {
     const config = loadConfig();
 
     // Logger
-    const logger = new AgentLogger("./data/events.jsonl");
-    await logger.init();
+    const logger = customLogger ?? new AgentLogger("./data/events.jsonl");
+    if (!customLogger) {
+        await logger.init();
+    }
 
     // Persistence
     const store = new ConversationStore("./data/conversations");

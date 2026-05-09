@@ -1,7 +1,7 @@
-import { Client, GatewayIntentBits, Events, type Message, ChannelType } from "discord.js"
+import { Client, GatewayIntentBits, Events, type Message, ChannelType } from "discord.js";
 
-import { createAgent, type AgentBundle } from "../agent"
-import { CheckSchemaPushStack } from "typebox/schema";
+import { createAgent, type AgentBundle } from "../agent";
+import { AgentLogger } from "../observability/logger";
 
 interface BotOptions {
     token: string;
@@ -15,13 +15,16 @@ export async function startDiscordBot(options: BotOptions): Promise<void> {
     // one agent bundle per discord user. created lazily on first message.
     const agents = new Map<string, AgentBundle>();
 
+    const logger = new AgentLogger("./data/events.jsonl");
+    await logger.init();
+
     async function getOrCreateAgent(userId: string): Promise<AgentBundle> {
         let bundle = agents.get(userId);
         if (bundle) {
             return bundle;
         }
 
-        bundle = await createAgent(userId);
+        bundle = await createAgent(userId, logger);
 
         // Add a per-user subscriber for buffering text deltas. We need this
         // separate from the logger because Discord doesn't stream — it sends
