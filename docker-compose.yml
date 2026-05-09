@@ -1,0 +1,21 @@
+services:
+  homelab-agent:
+    build: .
+    restart: unless-stopped
+    env_file: .env.local
+    volumes:
+      # Persist conversations and event logs across container restarts
+      - ./data:/app/data
+      # If your tools need to inspect the host's docker, mount the socket.
+      # Comment out if you don't want this — it gives the agent root-equivalent
+      # access to the host.
+      # - /var/run/docker.sock:/var/run/docker.sock
+      # If your tools want to read host system info via SSH, mount a key.
+      # - ~/.ssh/homelab_key:/root/.ssh/id_rsa:ro
+    # If your homelab services run on a docker network, join it so the agent
+    # can resolve them by name. Adjust the network name to match yours.
+    # networks:
+    #   - homelab
+# networks:
+#   homelab:
+#     external: true
