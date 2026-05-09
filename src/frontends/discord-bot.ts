@@ -53,17 +53,20 @@ export async function startDiscordBot(options: BotOptions): Promise<void> {
             return;
         }
 
+        // Only respond to mentions in guild channels, but to all DMs.
         const isDm = message.channel.type === ChannelType.DM;
         const isMentioned = message.mentions.has(client.user!);
         if (!isDm && !isMentioned) {
             return;
         }
 
+        // Allowlist check — silently ignore anyone not approved.
         if (!allowedUserIds.has(message.author.id)) {
             console.log(`[discord] ignored messages from unauthorized user ${message.author.id}`);
             return;
         }
 
+        // Strip the @mention from the message text
         const userText = message.content
             .replace(`<@${client.user!.id}>`, "")
             .replace(`<@!${client.user!.id}>`, "")
@@ -72,6 +75,7 @@ export async function startDiscordBot(options: BotOptions): Promise<void> {
             return;
         }
 
+        // Slash-style commands handled before reaching the agent
         if (userText === "/clear") {
             const bundle = agents.get(message.author.id);
             if (bundle) {
@@ -92,9 +96,11 @@ export async function startDiscordBot(options: BotOptions): Promise<void> {
             return;
         }
 
+        // Get the user's agent and prepare to handle this message.
         const bundle = await getOrCreateAgent(message.author.id);
         const { agent, logger } = bundle;
 
+        // Start a fresh trace for this user message.
         const trace_id = bundle.newTraceId();
 
         bundle.setContext({ trace_id, user_id: message.author.id });
@@ -106,6 +112,8 @@ export async function startDiscordBot(options: BotOptions): Promise<void> {
             data: { content: userText, content_length: userText.length }
         });
 
+        // Buffer the agent's response. Subscribe just for this turn, unsubscribe
+        // when done — otherwise subscribers from previous turns would still fire.
         let responseBuffer = "";
         const unsubscribe = agent.subscribe((event) => {
             if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta" && typeof event.assistantMessageEvent.delta === "string") {
@@ -113,6 +121,8 @@ export async function startDiscordBot(options: BotOptions): Promise<void> {
             }
         });
 
+        // Show typing indicator while the agent thinks. Discord's sendTyping
+        // lasts ~10 seconds, so we re-fire every 8s.
         const typingInterval = setInterval(() => {
             if ("sendTyping" in message.channel) {
                 message.channel.sendTyping().catch(() => { });
@@ -139,6 +149,7 @@ export async function startDiscordBot(options: BotOptions): Promise<void> {
             clearInterval(typingInterval);
         }
 
+        // Send the response, splitting at Discord's 2000-char limit.
         const reply = responseBuffer.trim() || "(no response)";
         await sendChunked(message, reply);
     });
@@ -146,8 +157,10 @@ export async function startDiscordBot(options: BotOptions): Promise<void> {
     await client.login(token);
 }
 
+// Discord caps individual messages at 2000 characters. We chunk on word
+// boundaries when possible to avoid breaking words awkwardly mid-flight.
 async function sendChunked(message: Message, text: string): Promise<void> {
-    const MAX = 1900;
+    const MAX = 1900; // a little under 2000 for safety margin
 
     if (text.length <= MAX) {
         await message.reply(text);
@@ -162,6 +175,8 @@ async function sendChunked(message: Message, text: string): Promise<void> {
             break;
         }
 
+        // Look for the last newline in the first MAX chars; fall back to
+        // last space; fall back to hard cut.
         let cutAt = remaining.lastIndexOf("\n", MAX);
         if (cutAt < MAX / 2) {
             cutAt = remaining.lastIndexOf(" ", MAX);
@@ -175,6 +190,7 @@ async function sendChunked(message: Message, text: string): Promise<void> {
         remaining = remaining.slice(cutAt).trimStart();
     }
 
+    // Reply once, then send subsequent chunks as follow-ups in the same channel.
     const [first, ...rest] = chunks as [string, ...string[]];
 
     await message.reply(first);
