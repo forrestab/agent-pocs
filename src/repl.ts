@@ -4,7 +4,7 @@ import { createAgent } from "./agent";
 
 async function main() {
     const bundle = await createAgent("local");
-    const { agent, logger } = bundle;
+    const { agent, logger, store, userId } = bundle;
     const DEBUG = process.env.DEBUG === "true";
 
     agent.subscribe((event) => {
@@ -39,6 +39,9 @@ async function main() {
 
     console.log("homelab-agent REPL. Ctrl-C to quit.");
     console.log(`Logging to ./data/events.jsonl${DEBUG ? " (DEBUG mode)" : ""}\n`);
+    console.log(`Conversation stored at ./data/conversations/${userId}.json`);
+    console.log(`Loaded ${agent.state.messages.length} prior messages.`);
+    console.log("\nCommands: /clear (wipe conversation), /info (stats)\n");
 
     const shutdown = async () => {
         process.stdout.write("\nshutting down...\n");
@@ -53,14 +56,45 @@ async function main() {
 
         if (!input.trim()) continue;
 
+        // slash commands
+        if (input === "/clear") { 
+            await store.clear(userId);
+            agent.state.messages = [];
+            console.log("[conversation cleared");
+            continue;
+        }
+
+        if (input === "/info") {
+            console.log(`messages: ${agent.state.messages.length}`);
+            console.log(`model: ${agent.state.model.id}`);
+            continue;
+        }
+
+        if (input === "/messages") {
+            const counts = agent.state.messages.reduce(
+                (acc, message) => {
+                    acc[message.role] = (acc[message.role] || 0) + 1;
+                    return acc;
+                },
+                {} as Record<string, number>,
+            );
+            console.log("Message counts: ", counts);
+            console.log(`Total messages: ${agent.state.messages.length}`);
+            // Estimate tokens: rough rule of thumb is 4 chars = 1 token
+            // `JSON.stringify` also adds characters, but this is a rough estimate
+            const totalChars = JSON.stringify(agent.state.messages).length;
+            console.log(`Approx tokens: ${Math.round(totalChars / 4)}`);
+            continue;
+        }
+
         const trace_id = bundle.newTraceId();
 
-        bundle.setContext({ trace_id, user_id: "local" });
+        bundle.setContext({ trace_id, user_id: userId });
 
         logger.log({
             timestamp: new Date().toISOString(),
             trace_id,
-            user_id: "local",
+            user_id: userId,
             event_type: "user_message",
             data: { content: input, content_length: input.length },
         });
@@ -73,7 +107,7 @@ async function main() {
             logger.log({
                 timestamp: new Date().toISOString(),
                 trace_id,
-                user_id: "local",
+                user_id: userId,
                 event_type: "error",
                 data: { where: "agent.prompt", message: error.message, stack: error.stack },
             });
