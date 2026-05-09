@@ -1,17 +1,39 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 
-async function runCommand(command: string, options: { timeoutMs?: number } = {}): Promise<AgentToolResult<{ stdout: string; stderr: string }>> {
+async function runCommand(
+    command: string, 
+    options: { timeoutMs?: number; maxOutputBytes?: number } = {}
+): Promise<AgentToolResult<{ stdout: string; stderr: string, truncated: boolean }>> {
+    const maxOutputBytes = options.maxOutputBytes ?? 50_000;
+
     const proc = Bun.spawn(["sh", "-c", command], {
         stdout: "pipe",
         stderr: "pipe",
         timeout: options.timeoutMs ?? 10_000
     });
-    const stdout = await new Response(proc.stdout).text();
-    const stderr = await new Response(proc.stderr).text();
+    let truncated = false;
+    let stdout = await new Response(proc.stdout).text();
+    if (stdout.length > maxOutputBytes) {
+        stdout = stdout.slice(0, maxOutputBytes) + "\n... [truncated]";
+        truncated = true;
+    }
+
+    let stderr = await new Response(proc.stderr).text();
+    if (stderr.length > maxOutputBytes) {
+        stderr = stderr.slice(0, maxOutputBytes) + "\n... [truncated]";
+        truncated = true;
+    }
+
     const text = [stdout, stderr].filter(Boolean).join("\n");
 
-    return { content: [{ type: "text", text }], details: { stdout, stderr } };
+    const contentBlocks: AgentToolResult<any>["content"] = [{ type: "text", text }];
+
+    if (truncated) {
+        contentBlocks.push({ type: "text", text: "[Output was truncated due to size limits]" });
+    }
+
+    return { content: contentBlocks, details: { stdout, stderr, truncated } };
 }
 
 const diskUsageParams = Type.Object({

@@ -6,6 +6,9 @@ import { getTools } from "./tools";
 import { AgentLogger } from "./observability/logger";
 import { attachLogger } from "./observability/agent-subscriber";
 import { ConversationStore } from "./persistence/conversation";
+import { attachToolGuards } from "./safety/tool-guards";
+import { withRetry } from "./safety/retry";
+import { transpileDeclaration } from "typescript";
 
 export interface AgentBundle {
     agent: Agent;
@@ -34,6 +37,29 @@ export async function createAgent(userId = "local", customLogger?: AgentLogger):
         console.log(`[persistence] loaded ${initialMessages.length} message for user ${userId}`);
     }
 
+    // Wrap streamSimple with retry logic
+    let currentContext = {
+        trace_id: "",
+        user_id: userId,
+    };
+
+    const retryingStreamFn = withRetry(streamSimple, {
+        maxAttempts: 4,
+        onRetry: ({ attempt, maxAttempts, error, delayMs }) => {
+            console.warn(`[retry] LLM call attempt ${attempt}/${maxAttempts} failed: ${error.message}. retrying in ${Math.round(delayMs)}ms`);
+            logger.log({
+                timestamp: new Date().toISOString(),
+                trace_id: currentContext.trace_id,
+                user_id: userId,
+                event_type: "error",
+                data: {
+                    where: "llm.stream.retry",
+                    message: `attempt ${attempt}/${maxAttempts}: ${error.message}`
+                }
+            });
+        }
+    });
+
     const agent = new Agent({
         initialState: {
             systemPrompt: config.systemPrompt,
@@ -42,19 +68,39 @@ export async function createAgent(userId = "local", customLogger?: AgentLogger):
             thinkingLevel: "off",
             messages: initialMessages
         },
-        streamFn: streamSimple
+        streamFn: retryingStreamFn
     });
 
-    let currentContext = {
+    currentContext = {
         trace_id: logger.newTraceId(),
         user_id: userId,
     };
+
+    // Attach guardrails
+    attachToolGuards(agent, {
+        maxCallsPerTool: 5,
+        maxTotalCalls: 20,
+        onBlocked: ({ tool, reason }) => {
+            console.warn(`[guard] blocked: ${reason}`);
+            logger.log({
+                timestamp: new Date().toISOString(),
+                trace_id: currentContext.trace_id,
+                user_id: userId,
+                event_type: "error",
+                data: {
+                    where: "tool_guard",
+                    message: reason,
+                },
+            });
+        }
+    });
 
     attachLogger(agent, logger, () => ({
         ...currentContext,
         model: `${config.model.provider}/${config.model.id}`,
     }));
 
+    // Persistence subscription
     agent.subscribe(async (event) => {
         if (event.type === "agent_end") {
             try {

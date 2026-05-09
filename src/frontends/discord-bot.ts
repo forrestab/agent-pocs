@@ -143,7 +143,18 @@ export async function startDiscordBot(options: BotOptions): Promise<void> {
                 event_type: "error",
                 data: { where: "agent.prompt", message: error.message, stack: error.stack }
             });
-            responseBuffer = `error ${error.message}`;
+
+            // Categorize the error for user-facing message
+            const status = error?.status ?? error?.response?.status;
+            if (status === 401 || status === 403) {
+                responseBuffer = "(authentication failure — check the bot's API key)";
+            } else if (status === 429) {
+                responseBuffer = "(rate limited — try again in a minute)";
+            } else if (typeof status === "number" && status >= 500) {
+                responseBuffer = "(model provider is having issues — try again shortly)";
+            } else {
+                responseBuffer = `(error: ${error.message?.slice(0, 200) ?? "unknown"})`;
+            }
         } finally {
             unsubscribe();
             clearInterval(typingInterval);
