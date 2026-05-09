@@ -1,4 +1,4 @@
-import { getModel, type KnownProvider } from "@mariozechner/pi-ai";
+import { getModel, type KnownProvider } from "@earendil-works/pi-ai";
 
 export interface AppConfig {
     model: ReturnType<typeof getModel>;

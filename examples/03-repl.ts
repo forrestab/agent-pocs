@@ -1,5 +1,5 @@
-import { Agent, type AgentTool } from "@mariozechner/pi-agent-core";
-import { getModel, streamSimple } from "@mariozechner/pi-ai";
+import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
+import { getModel, streamSimple } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import * as readline from "node:readline/promises";
 

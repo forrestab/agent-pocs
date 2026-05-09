@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
 export class ConversationStore {
     constructor(private rootDir: string) {}

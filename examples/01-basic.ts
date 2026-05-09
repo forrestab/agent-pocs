@@ -1,4 +1,4 @@
-import { getModel, completeSimple } from "@mariozechner/pi-ai";
+import { getModel, completeSimple } from "@earendil-works/pi-ai";
 
 const model = getModel("openrouter", "google/gemma-4-31b-it:free");
 

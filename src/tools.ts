@@ -1,4 +1,4 @@
-import type { AgentTool, AgentToolResult } from "@mariozechner/pi-agent-core";
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 
 async function runCommand(command: string, options: { timeoutMs?: number } = {}): Promise<AgentToolResult<{ stdout: string; stderr: string }>> {

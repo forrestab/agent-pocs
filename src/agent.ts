@@ -1,5 +1,5 @@
-import { Agent } from "@mariozechner/pi-agent-core";
-import { streamSimple } from "@mariozechner/pi-ai";
+import { Agent } from "@earendil-works/pi-agent-core";
+import { streamSimple } from "@earendil-works/pi-ai";
 
 import { loadConfig } from "./config";
 import { getTools } from "./tools";
