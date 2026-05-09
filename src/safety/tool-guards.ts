@@ -1,5 +1,4 @@
 import type { Agent } from "@earendil-works/pi-agent-core";
-import { StatusDisplayType } from "discord.js";
 
 export interface ToolGuardOptions {
     /** Max times any single tool can be called within one user message. */
@@ -42,28 +41,28 @@ export function attachToolGuards(agent: Agent, options: ToolGuardOptions = {}): 
                 if (result?.block) {
                     return result;
                 }
-
-                const tool = ctx.toolCall.name;
-                const perToolCount = stats.perTool.get(tool) ?? 0;
-
-                if (stats.total >= maxTotalCalls) {
-                    const reason = `Too many tool calls in this turn (${stats.total}/${maxTotalCalls}). Stopping.`;
-                    options.onBlocked?.({ tool, reason });
-                    return { block: true, reason };
-                }
-
-                if (perToolCount >= maxCallsPerTool) {
-                    const reason = `Tool ${tool} called too many times (${perToolCount}/${maxCallsPerTool}). Try a different approach.`;
-                    options.onBlocked?.({ tool, reason });
-                    return { block: true, reason };
-                }
-
-                // Allow — increment counters
-                stats.perTool.set(tool, perToolCount + 1);
-                stats.total++;
-
-                return undefined;
             }
+
+            const tool = ctx.toolCall.name;
+            const perToolCount = stats.perTool.get(tool) ?? 0;
+
+            if (stats.total >= maxTotalCalls) {
+                const reason = `Too many tool calls in this turn (${stats.total}/${maxTotalCalls}). Stopping.`;
+                options.onBlocked?.({ tool, reason });
+                return { block: true, reason };
+            }
+
+            if (perToolCount >= maxCallsPerTool) {
+                const reason = `Tool ${tool} called too many times (${perToolCount}/${maxCallsPerTool}). Try a different approach.`;
+                options.onBlocked?.({ tool, reason });
+                return { block: true, reason };
+            }
+
+            // Allow — increment counters
+            stats.perTool.set(tool, perToolCount + 1);
+            stats.total++;
+
+            return undefined;
         },
     };
 

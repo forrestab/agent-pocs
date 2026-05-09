@@ -8,7 +8,6 @@ import { attachLogger } from "./observability/agent-subscriber";
 import { ConversationStore } from "./persistence/conversation";
 import { attachToolGuards } from "./safety/tool-guards";
 import { withRetry } from "./safety/retry";
-import { transpileDeclaration } from "typescript";
 
 export interface AgentBundle {
     agent: Agent;
