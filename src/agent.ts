@@ -62,8 +62,8 @@ export async function createAgent(userId = "local", customLogger?: AgentLogger):
 
     const transformContext = makeContextTransform({
         recentTurnsKeptIntact: 3,
-        maxMessages: 60,
-        toolResultMaxBytes: 1_000,
+        maxTotalTokens: 5000,
+        toolResultMaxTokens: 250,
         onTransform: (info) => {
             if (info.toolResultsTrimmed > 0 || info.messagesDropped > 0) {
                 console.log(

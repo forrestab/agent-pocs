@@ -21,12 +21,17 @@ export interface ContextTransformOptions {
    */
   toolResultMaxBytes?: number;
 
+  maxTotalTokens?: number;
+  toolResultMaxTokens?: number;
+
   /** Optional callback for observability — fires whenever this hook runs. */
   onTransform?: (info: {
     inputCount: number;
     outputCount: number;
     toolResultsTrimmed: number;
     messagesDropped: number;
+    inputTokens: number;
+    outputTokens: number;
   }) => void;
 }
 
@@ -42,8 +47,11 @@ export function makeContextTransform(
   options: ContextTransformOptions = {},
 ): (messages: AgentMessage[]) => Promise<AgentMessage[]> {
   const recentTurnsKeptIntact = options.recentTurnsKeptIntact ?? 3;
-  const maxMessages = options.maxMessages ?? 60;
-  const toolResultMaxBytes = options.toolResultMaxBytes ?? 1_000;
+  //const maxMessages = options.maxMessages ?? 60;
+  //const toolResultMaxBytes = options.toolResultMaxBytes ?? 1_000;
+
+  const maxTotalTokens = options.maxTotalTokens ?? 60_000;
+  const toolResultMaxTokens = options.toolResultMaxTokens ?? 1_000;
 
   return async (messages) => {
     const inputCount = messages.length;
@@ -61,7 +69,7 @@ export function makeContextTransform(
       if ((msg as any).role !== "toolResult") return msg;
 
       const serialized = JSON.stringify((msg as any).content ?? "");
-      if (serialized.length <= toolResultMaxBytes) return msg;
+      if (countTokens(serialized) <= toolResultMaxTokens) return msg;
 
       toolResultsTrimmed++;
       // Replace the content with a short placeholder. Keep role/metadata so
@@ -77,16 +85,37 @@ export function makeContextTransform(
       } as AgentMessage;
     });
 
-    // Step 3: if we're still over the message cap, drop oldest non-protected
-    // entries and inject a breadcrumb at the front.
-    if (working.length > maxMessages) {
+    // Step 3: using token budgets instead of message counts
+    // or accurate, if you add @anthropic-ai/tokenizer
+    const totalTokens = working.reduce((sum, msg) => {
+      const text = JSON.stringify((msg as any).content ?? "");
+      return sum + countTokens(text);
+    }, 0);
+
+    if (totalTokens > maxTotalTokens) {
       const protectedSlice = working.slice(protectedIndex);
-      const headroom = maxMessages - protectedSlice.length;
-      // Keep `headroom` newest messages from the older portion (still older
-      // than the protected slice). If headroom <= 0, we drop everything older.
+      const protectedTokens = protectedSlice.reduce((sum, msg) => {
+        return sum + countTokens(JSON.stringify((msg as any).content ?? ""));
+      }, 0);
+
+      const budget = maxTotalTokens - protectedTokens;
       const olderSlice = working.slice(0, protectedIndex);
-      const keptOlder = headroom > 0 ? olderSlice.slice(-headroom) : [];
-      messagesDropped = olderSlice.length - keptOlder.length;
+
+      // walk from newest-of-older backward, accumulating until over budget
+      let accumulated = 0;
+      let cutpoint = olderSlice.length;
+      for (let i = olderSlice.length - 1; i >= 0; i--) {
+        const cost = countTokens(JSON.stringify((olderSlice[i] as any).content ?? ""));
+        if (accumulated + cost > budget) {
+          cutpoint = i + 1;
+          break;
+        }
+        accumulated += cost;
+        cutpoint = i;
+      }
+
+      const keptOlder = olderSlice.slice(cutpoint);
+      messagesDropped = cutpoint;
 
       const breadcrumb: AgentMessage = {
         role: "user",
@@ -104,11 +133,17 @@ export function makeContextTransform(
           : [...keptOlder, ...protectedSlice];
     }
 
+    const outputTokens = working.reduce((sum, msg) => {
+      return sum + countTokens(JSON.stringify((msg as any).content ?? ""));
+    }, 0);
+
     options.onTransform?.({
       inputCount,
       outputCount: working.length,
       toolResultsTrimmed,
       messagesDropped,
+      inputTokens: totalTokens,
+      outputTokens,
     });
 
     return working;
@@ -134,4 +169,8 @@ function findProtectedStartIndex(
     }
   }
   return 0; // fewer than N turns total — protect everything
+}
+
+function countTokens(text: string): number {
+  return Math.ceil(text.length / 4);
 }
