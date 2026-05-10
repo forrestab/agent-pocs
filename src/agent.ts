@@ -8,6 +8,7 @@ import { attachLogger } from "./observability/agent-subscriber";
 import { ConversationStore } from "./persistence/conversation";
 import { attachToolGuards } from "./safety/tool-guards";
 import { withRetry } from "./safety/retry";
+import { makeContextTransform } from "./context/transform";
 
 export interface AgentBundle {
     agent: Agent;
@@ -59,6 +60,30 @@ export async function createAgent(userId = "local", customLogger?: AgentLogger):
         }
     });
 
+    const transformContext = makeContextTransform({
+        recentTurnsKeptIntact: 3,
+        maxMessages: 60,
+        toolResultMaxBytes: 1_000,
+        onTransform: (info) => {
+            if (info.toolResultsTrimmed > 0 || info.messagesDropped > 0) {
+                console.log(
+                    `[context] transform: ${info.inputCount} → ${info.outputCount} ` +
+                    `(trimmed ${info.toolResultsTrimmed} tool results, ` +
+                    `dropped ${info.messagesDropped} messages)`,
+                );
+                logger.log({
+                    timestamp: new Date().toISOString(),
+                    trace_id: currentContext.trace_id,
+                    user_id: userId,
+                    event_type: "context_transform",
+                    data: {
+                        ...info
+                    },
+                });
+            }
+        }
+    });
+
     const agent = new Agent({
         initialState: {
             systemPrompt: config.systemPrompt,
@@ -67,7 +92,8 @@ export async function createAgent(userId = "local", customLogger?: AgentLogger):
             thinkingLevel: "off",
             messages: initialMessages
         },
-        streamFn: retryingStreamFn
+        streamFn: retryingStreamFn,
+        transformContext
     });
 
     currentContext = {

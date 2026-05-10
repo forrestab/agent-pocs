@@ -63,6 +63,16 @@ export interface AgentResponseEvent extends BaseEvent {
     };
 }
 
+export interface ContextTransformEvent extends BaseEvent {
+    event_type: "context_transform";
+    data: {
+        inputCount: number;
+        outputCount: number;
+        toolResultsTrimmed: number;
+        messagesDropped: number;
+    };
+}
+
 export interface ErrorEvent extends BaseEvent {
     event_type: "error";
     data: {
@@ -72,10 +82,11 @@ export interface ErrorEvent extends BaseEvent {
     };
 }
 
-export type AgentEvent = 
+export type AgentEvent =
     | UserMessageEvent
     | TurnStartEvent
     | TurnEndEvent
     | ToolCallEvent
     | AgentResponseEvent
+    | ContextTransformEvent
     | ErrorEvent;
