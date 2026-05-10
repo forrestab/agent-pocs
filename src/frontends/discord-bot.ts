@@ -2,6 +2,8 @@ import { Client, GatewayIntentBits, Events, type Message, ChannelType } from "di
 
 import { createAgent, type AgentBundle } from "../agent";
 import { AgentLogger } from "../observability/logger";
+import { withMessageSpan } from "../tracing/instrumentation";
+import { createSolutionBuilderWithWatch } from "typescript";
 
 interface BotOptions {
     token: string;
@@ -103,66 +105,75 @@ export async function startDiscordBot(options: BotOptions): Promise<void> {
         // Start a fresh trace for this user message.
         const trace_id = bundle.newTraceId();
 
-        bundle.setContext({ trace_id, user_id: message.author.id });
-        logger.log({
-            timestamp: new Date().toISOString(),
-            trace_id,
-            user_id: message.author.id,
-            event_type: "user_message",
-            data: { content: userText, content_length: userText.length }
-        });
+        withMessageSpan(
+            {
+                userId: message.author.id,
+                frontend: "discord",
+                messagePreviewSize: userText.length,
+            },
+            async () => {
+                bundle.setContext({ trace_id: "otel-managed", user_id: message.author.id });
+                logger.log({
+                    timestamp: new Date().toISOString(),
+                    trace_id: "otel-managed",
+                    user_id: message.author.id,
+                    event_type: "user_message",
+                    data: { content: userText, content_length: userText.length }
+                });
 
-        // Buffer the agent's response. Subscribe just for this turn, unsubscribe
-        // when done — otherwise subscribers from previous turns would still fire.
-        let responseBuffer = "";
-        const unsubscribe = agent.subscribe((event) => {
-            if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta" && typeof event.assistantMessageEvent.delta === "string") {
-                responseBuffer += event.assistantMessageEvent.delta;
-            }
-        });
+                // Buffer the agent's response. Subscribe just for this turn, unsubscribe
+                // when done — otherwise subscribers from previous turns would still fire.
+                let responseBuffer = "";
+                const unsubscribe = agent.subscribe((event) => {
+                    if (event.type === "message_update" && event.assistantMessageEvent?.type === "text_delta" && typeof event.assistantMessageEvent.delta === "string") {
+                        responseBuffer += event.assistantMessageEvent.delta;
+                    }
+                });
 
-        // Show typing indicator while the agent thinks. Discord's sendTyping
-        // lasts ~10 seconds, so we re-fire every 8s.
-        const typingInterval = setInterval(() => {
-            if ("sendTyping" in message.channel) {
-                message.channel.sendTyping().catch(() => { });
-            }
-        }, 8_000);
+                // Show typing indicator while the agent thinks. Discord's sendTyping
+                // lasts ~10 seconds, so we re-fire every 8s.
+                const typingInterval = setInterval(() => {
+                    if ("sendTyping" in message.channel) {
+                        message.channel.sendTyping().catch(() => { });
+                    }
+                }, 8_000);
 
-        if ("sendTyping" in message.channel) {
-            message.channel.sendTyping().catch(() => { });
-        }
+                if ("sendTyping" in message.channel) {
+                    message.channel.sendTyping().catch(() => { });
+                }
 
-        try {
-            await agent.prompt(userText);
-        } catch (error: any) {
-            logger.log({
-                timestamp: new Date().toISOString(),
-                trace_id,
-                user_id: message.author.id,
-                event_type: "error",
-                data: { where: "agent.prompt", message: error.message, stack: error.stack }
-            });
+                try {
+                    await agent.prompt(userText);
+                } catch (error: any) {
+                    logger.log({
+                        timestamp: new Date().toISOString(),
+                        trace_id: "otel-managed",
+                        user_id: message.author.id,
+                        event_type: "error",
+                        data: { where: "agent.prompt", message: error.message, stack: error.stack }
+                    });
 
-            // Categorize the error for user-facing message
-            const status = error?.status ?? error?.response?.status;
-            if (status === 401 || status === 403) {
-                responseBuffer = "(authentication failure — check the bot's API key)";
-            } else if (status === 429) {
-                responseBuffer = "(rate limited — try again in a minute)";
-            } else if (typeof status === "number" && status >= 500) {
-                responseBuffer = "(model provider is having issues — try again shortly)";
-            } else {
-                responseBuffer = `(error: ${error.message?.slice(0, 200) ?? "unknown"})`;
-            }
-        } finally {
-            unsubscribe();
-            clearInterval(typingInterval);
-        }
+                    // Categorize the error for user-facing message
+                    const status = error?.status ?? error?.response?.status;
+                    if (status === 401 || status === 403) {
+                        responseBuffer = "(authentication failure — check the bot's API key)";
+                    } else if (status === 429) {
+                        responseBuffer = "(rate limited — try again in a minute)";
+                    } else if (typeof status === "number" && status >= 500) {
+                        responseBuffer = "(model provider is having issues — try again shortly)";
+                    } else {
+                        responseBuffer = `(error: ${error.message?.slice(0, 200) ?? "unknown"})`;
+                    }
+                } finally {
+                    unsubscribe();
+                    clearInterval(typingInterval);
+                }
 
-        // Send the response, splitting at Discord's 2000-char limit.
-        const reply = responseBuffer.trim() || "(no response)";
-        await sendChunked(message, reply);
+                // Send the response, splitting at Discord's 2000-char limit.
+                const reply = responseBuffer.trim() || "(no response)";
+                await sendChunked(message, reply);
+            },
+        );
     });
 
     await client.login(token);

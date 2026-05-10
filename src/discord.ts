@@ -1,4 +1,7 @@
-import { startDiscordBot } from "./frontends/discord-bot"
+import { startDiscordBot } from "./frontends/discord-bot";
+import { initTracing } from "./tracing/init";
+
+initTracing();
 
 const token = Bun.env.DISCORD_TOKEN;
 const ownerId = Bun.env.DISCORD_OWNER_ID;

@@ -9,6 +9,7 @@ import { ConversationStore } from "./persistence/conversation";
 import { attachToolGuards } from "./safety/tool-guards";
 import { withRetry } from "./safety/retry";
 import { makeContextTransform } from "./context/transform";
+import { instrumentTool, instrumentStreamFn, getCurrentTraceId } from "./tracing/instrumentation";
 
 export interface AgentBundle {
     agent: Agent;
@@ -84,15 +85,23 @@ export async function createAgent(userId = "local", customLogger?: AgentLogger):
         }
     });
 
+    // Wrap every tool with span instrumentation
+    const instrumentedTools = getTools().map(instrumentTool);
+
+    // Wrap the streamFn AFTER retry — the retry span shows total time including
+    // retries, the inner per-attempt LLM time isn't visible. If you want it
+    // visible, swap: instrumentStreamFn first, then withRetry.
+    const tracedStreamFn = instrumentStreamFn(retryingStreamFn);
+
     const agent = new Agent({
         initialState: {
             systemPrompt: config.systemPrompt,
             model: config.model,
-            tools: getTools(),
+            tools: instrumentedTools,
             thinkingLevel: "off",
             messages: initialMessages
         },
-        streamFn: retryingStreamFn,
+        streamFn: tracedStreamFn,
         transformContext
     });
 
@@ -122,6 +131,8 @@ export async function createAgent(userId = "local", customLogger?: AgentLogger):
 
     attachLogger(agent, logger, () => ({
         ...currentContext,
+        // Use OTel's trace ID if one is active, else fall back to the random one.
+        trace_id: getCurrentTraceId() ?? currentContext.trace_id,
         model: `${config.model.provider}/${config.model.id}`,
     }));
 

@@ -1,6 +1,10 @@
 import * as readline from "node:readline/promises";
 
 import { createAgent } from "./agent";
+import { initTracing } from "./tracing/init";
+import { withMessageSpan } from "./tracing/instrumentation";
+
+initTracing();
 
 async function main() {
     const bundle = await createAgent("local");
@@ -57,7 +61,7 @@ async function main() {
         if (!input.trim()) continue;
 
         // slash commands
-        if (input === "/clear") { 
+        if (input === "/clear") {
             await store.clear(userId);
             agent.state.messages = [];
             console.log("[conversation cleared");
@@ -89,31 +93,43 @@ async function main() {
 
         const trace_id = bundle.newTraceId();
 
-        bundle.setContext({ trace_id, user_id: userId });
+        await withMessageSpan(
+            {
+                userId,
+                frontend: "repl",
+                messagePreviewSize: input.length,
+            },
+            async () => {
+                // We don't need to call newTraceId() anymore — OTel provides one.
+                // But setContext is still used by the logger subscriber. Pass a
+                // placeholder; the real trace ID comes from the active span.
+                bundle.setContext({ trace_id: "otel-managed", user_id: userId });
 
-        logger.log({
-            timestamp: new Date().toISOString(),
-            trace_id,
-            user_id: userId,
-            event_type: "user_message",
-            data: { content: input, content_length: input.length },
-        });
+                logger.log({
+                    timestamp: new Date().toISOString(),
+                    trace_id: "otel-managed", // logger overrides this with the real OTel trace ID
+                    user_id: userId,
+                    event_type: "user_message",
+                    data: { content: input, content_length: input.length },
+                });
 
-        process.stdout.write("\nagent> ");
+                process.stdout.write("\nagent> ");
 
-        try {
-            await agent.prompt(input);
-        } catch (error: any) {
-            logger.log({
-                timestamp: new Date().toISOString(),
-                trace_id,
-                user_id: userId,
-                event_type: "error",
-                data: { where: "agent.prompt", message: error.message, stack: error.stack },
-            });
-            console.error(`\n[error] ${error.message}`);
-        }
-        process.stdout.write("\n");
+                try {
+                    await agent.prompt(input);
+                } catch (error: any) {
+                    logger.log({
+                        timestamp: new Date().toISOString(),
+                        trace_id: "otel-managed",
+                        user_id: userId,
+                        event_type: "error",
+                        data: { where: "agent.prompt", message: error.message, stack: error.stack },
+                    });
+                    console.error(`\n[error] ${error.message}`);
+                }
+                process.stdout.write("\n");
+            },
+        );
     }
 }
 

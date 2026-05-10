@@ -16,6 +16,14 @@ services:
     # can resolve them by name. Adjust the network name to match yours.
     # networks:
     #   - homelab
+  
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    restart: unless-stopped
+    ports:
+      - "16686:16686"
+      - "4318:4318"
+
 # networks:
 #   homelab:
 #     external: true
