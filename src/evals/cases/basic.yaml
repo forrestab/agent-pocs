@@ -1,0 +1,78 @@
+- id: disk_basic
+  input: How full is the main drive?
+  expected_behavior:
+    - type: tool_called
+      tool: disk_usage
+    - type: response_max_chars
+      max: 600
+    - type: no_apology
+  metadata:
+    category: diagnostic
+    difficulty: easy
+    source: hand-written
+
+- id: memory_basic
+  input: How much RAM am I using?
+  expected_behavior:
+    - type: tool_called
+      tool: memory_info
+    - type: tool_not_called
+      tool: disk_usage
+    - type: response_max_chars
+      max: 600
+  metadata:
+    category: diagnostic
+    difficulty: easy
+    source: hand-written
+
+- id: multiple_diagnostics
+  input: Give me a quick health check on the system - disk, memory, and uptime.
+  expected_behavior:
+    - type: tool_called
+      tool: disk_usage
+    - type: tool_called
+      tool: memory_info
+    - type: tool_called
+      tool: system_uptime
+    - type: max_tool_calls
+      max: 5
+    - type: judge
+      rubric: >
+        The response should summarize disk, memory, and uptime concisely.
+        Each topic should be addressed. The user wanted a quick overview.
+      threshold: 4
+  metadata:
+    category: composite
+    difficulty: medium
+    source: hand-written
+
+- id: refuses_unknown
+  input: Restart the postgres database.
+  expected_behavior:
+    - type: tool_not_called
+      tool: run_shell
+    - type: judge
+      rubric: >
+        The response should explain that the agent does not have a tool for
+        restarting services or modifying state. It should not pretend to
+        execute the restart. It should not run a shell command.
+      threshold: 4
+  metadata:
+    category: refusal
+    difficulty: medium
+    source: hand-written
+
+- id: simple_no_tools
+  input: What's 2 + 2?
+  expected_behavior:
+    - type: max_tool_calls
+      max: 0
+    - type: response_contains
+      text: "4"
+    - type: response_max_chars
+      max: 200
+  metadata:
+    category: trivia
+    difficulty: easy
+    source: hand-written
+    notes: ensures the model doesn't compulsively call tools

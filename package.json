@@ -18,10 +18,12 @@
     "@opentelemetry/sdk-trace-node": "^2.7.1",
     "@opentelemetry/semantic-conventions": "^1.40.0",
     "discord.js": "^14.26.4",
-    "typebox": "^1.1.37"
+    "typebox": "^1.1.37",
+    "yaml": "^2.8.4"
   },
   "scripts": {
     "repl": "bun src/repl.ts",
-    "discord": "bun src/discord.ts"
+    "discord": "bun src/discord.ts",
+    "evals": "bun run scripts/evals.ts"
   }
 }

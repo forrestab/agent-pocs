@@ -15,6 +15,7 @@
         "@opentelemetry/semantic-conventions": "^1.40.0",
         "discord.js": "^14.26.4",
         "typebox": "^1.1.37",
+        "yaml": "^2.8.4",
       },
       "devDependencies": {
         "@types/bun": "latest",

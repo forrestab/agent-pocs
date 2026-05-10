@@ -30,6 +30,7 @@ export function loadConfig(): AppConfig {
             "Prefer the narrow tools over generic shell commands. If no tool fits, " +
             "say so rather than guessing. Always include the actual tool output (logs, stats, etc.) " +
             "in your response — don't just say you read it. Keep surrounding commentary concise.",
+            "Always provide detailed explanations of your reasoning.",
         ].join("\n"),
     };
 };
