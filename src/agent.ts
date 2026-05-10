@@ -103,7 +103,7 @@ export async function createAgent(userId = "local", customLogger?: AgentLogger):
     agent.subscribe(async (event) => {
         if (event.type === "agent_end") {
             try {
-                const snapshot = [...event.messages];
+                const snapshot = [...agent.state.messages];
                 await store.save(userId, snapshot);
             } catch (error: any) {
                 logger.log({
