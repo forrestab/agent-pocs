@@ -2,7 +2,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 
 async function runCommand(
-    command: string, 
+    command: string,
     options: { timeoutMs?: number; maxOutputBytes?: number } = {}
 ): Promise<AgentToolResult<{ stdout: string; stderr: string, truncated: boolean }>> {
     const maxOutputBytes = options.maxOutputBytes ?? 50_000;
@@ -107,6 +107,27 @@ export const serviceStatusTool: AgentTool<typeof serviceStatusParams> = {
     },
 };
 
+const podmanPsParams = Type.Object({
+    all: Type.Optional(
+        Type.Boolean({
+            description: "If true, show stopped containers too. Defaults to running only."
+        })
+    )
+});
+
+export const podmanPsTool: AgentTool<typeof podmanPsParams> = {
+    name: "podman_ps",
+    label: "List running Podman containers",
+    description: 
+        "Lists running Podman containers via `podman ps`. " +
+        "Returns containd id, image, status, posts, and name for each.",
+    parameters: podmanPsParams,
+    execute: async (_toolCallId, { all }) => {
+        const cmd = all ? "podman ps -a" : "podman ps";
+        return runCommand(cmd);
+    }
+};
+
 const readLogParams = Type.Object({
     serviceName: Type.String({
         description: "The service to read logs for (e.g., 'cron', 'nginx', 'sshd').",
@@ -155,6 +176,7 @@ export function getTools(): AgentTool[] {
         memoryInfoTool,
         systemUptimeTool,
         serviceStatusTool,
+        podmanPsTool,
         readLogTool,
     ];
 

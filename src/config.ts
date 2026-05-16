@@ -25,6 +25,7 @@ export function loadConfig(): AppConfig {
             "- memory_info: check RAM and swap",
             "- system_uptime: check uptime and load",
             "- service_status: check a systemd service",
+            "- podman_ps: List running Podman containers",
             "- read_log: read a service log",
             "",
             "Prefer the narrow tools over generic shell commands. If no tool fits, " +
