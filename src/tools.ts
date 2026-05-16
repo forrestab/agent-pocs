@@ -1,6 +1,41 @@
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 
+// A better approach to the tool metadata sidecar would be to define tiny wrappers for `AgentTool`.
+// Something like `defineSafeTool()` and `defineDestructiveTool()`.
+
+export type ToolSensitivity = "safe" | "destructive";
+
+interface ToolMetadata {
+    sensitivity: ToolSensitivity;
+    // If true, even with unlock active, each call requires explicit user confirmation.
+    requiresConfirmation?: boolean;
+}
+
+const TOOL_METADATA: Record<string, ToolMetadata> = {
+    disk_usage: { sensitivity: "safe" },
+    memory_info: { sensitivity: "safe" },
+    system_uptime: { sensitivity: "safe" },
+    service_status: { sensitivity: "safe" },
+    podman_ps: { sensitivity: "safe" },
+    read_log: { sensitivity: "safe" },
+    run_shell: { sensitivity: "safe" }, // technically a debug tool, but read-only by convention
+    // destructive tools follow
+    restart_container: { sensitivity: "destructive", requiresConfirmation: true },
+};
+
+export function getToolMetadata(name: string): ToolMetadata {
+    return (TOOL_METADATA[name] ?? { sensitivity: "safe" }) as ToolMetadata;
+}
+
+export function getDestructiveToolNames(): Set<string> {
+    return new Set(
+        Object.entries(TOOL_METADATA)
+            .filter(([_, m]) => m.sensitivity === "destructive")
+            .map(([name]) => name),
+    );
+}
+
 async function runCommand(
     command: string,
     options: { timeoutMs?: number; maxOutputBytes?: number } = {}
@@ -118,7 +153,7 @@ const podmanPsParams = Type.Object({
 export const podmanPsTool: AgentTool<typeof podmanPsParams> = {
     name: "podman_ps",
     label: "List running Podman containers",
-    description: 
+    description:
         "Lists running Podman containers via `podman ps`. " +
         "Returns containd id, image, status, posts, and name for each.",
     parameters: podmanPsParams,
@@ -126,6 +161,30 @@ export const podmanPsTool: AgentTool<typeof podmanPsParams> = {
         const cmd = all ? "podman ps -a" : "podman ps";
         return runCommand(cmd);
     }
+};
+
+const restartContainerParams = Type.Object({
+    container: Type.String({
+        description: "Container name or ID (must already exist)",
+        pattern: "^[a-zA-Z0-9._-]+$",
+    }),
+});
+
+export const restartContainerTool: AgentTool<typeof restartContainerParams> = {
+    name: "restart_container",
+    label: "Restart a Podman container",
+    description:
+        "Restarts a running Podman container via `podman restart`. This will " +
+        "cause brief downtime for that service. Only use when the user has " +
+        "explicitly asked to restart a specific container.",
+    parameters: restartContainerParams,
+    execute: async (_toolCallId, { container }) => {
+        if (!/^[a-zA-Z0-9._-]+$/.test(container)) {
+            const msg = `Invalid container name: ${container}`;
+            return { content: [{ type: "text", text: msg }], details: { stdout: "", stderr: msg } };
+        }
+        return runCommand(`podman restart ${container}`, { timeoutMs: 30_000 });
+    },
 };
 
 const readLogParams = Type.Object({
@@ -178,6 +237,7 @@ export function getTools(): AgentTool[] {
         serviceStatusTool,
         podmanPsTool,
         readLogTool,
+        restartContainerTool,
     ];
 
     if (process.env.ENABLE_SHELL_TOOL === "true") {

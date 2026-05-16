@@ -21,4 +21,12 @@ const allowedUserIds = new Set([
     ...(Bun.env.DISCORD_ALLOWED_USERS?.split(",").map((s) => s.trim()) ?? []),
 ]);
 
-await startDiscordBot({ token, ownerId, allowedUserIds });
+const client = await startDiscordBot({ token, ownerId, allowedUserIds });
+
+const shutdown = () => {
+    client.destroy();
+    process.exit(0);
+};
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

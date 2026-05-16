@@ -27,14 +27,9 @@ export function attachToolGuards(agent: Agent, options: ToolGuardOptions = {}): 
         }
     });
 
-    // The beforeToolCall hook is configured on the agent itself, not via subscribe.
-    // We mutate the agent's options to attach our guard. This is the documented
-    // shape for these hooks per pi-agent-core's API.
-    const previousBefore = (agent as any).options?.beforeToolCall;
+    const previousBefore = (agent as any).beforeToolCall;
 
-    (agent as any).options = {
-        ...(agent as any).options,
-        beforeToolCall: async (ctx: { toolCall: { name: string }; args: any }) => {
+    (agent as any).beforeToolCall = async (ctx: { toolCall: { name: string }; args: any }) => {
             // Run any prior beforeToolCall first
             if (previousBefore) {
                 const result = await previousBefore(ctx);
@@ -63,7 +58,6 @@ export function attachToolGuards(agent: Agent, options: ToolGuardOptions = {}): 
             stats.total++;
 
             return undefined;
-        },
     };
 
     return unsubscribe;

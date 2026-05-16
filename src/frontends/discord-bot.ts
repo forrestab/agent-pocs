@@ -1,9 +1,9 @@
 import { Client, GatewayIntentBits, Events, type Message, ChannelType } from "discord.js";
 
-import { createAgent, type AgentBundle } from "../agent";
+import { createAgent, type AgentBundle, unlockManager, confirmationQueue } from "../agent";
 import { AgentLogger } from "../observability/logger";
 import { withMessageSpan } from "../tracing/instrumentation";
-import { createSolutionBuilderWithWatch } from "typescript";
+import { getTools } from "../tools";
 
 interface BotOptions {
     token: string;
@@ -11,7 +11,7 @@ interface BotOptions {
     allowedUserIds: Set<string>;
 }
 
-export async function startDiscordBot(options: BotOptions): Promise<void> {
+export async function startDiscordBot(options: BotOptions): Promise<Client> {
     const { token, allowedUserIds } = options;
 
     // one agent bundle per discord user. created lazily on first message.
@@ -74,6 +74,82 @@ export async function startDiscordBot(options: BotOptions): Promise<void> {
             .replace(`<@!${client.user!.id}>`, "")
             .trim();
         if (!userText) {
+            return;
+        }
+
+        if (userText.startsWith("!unlock")) {
+            // Parse duration in minutes, default 5
+            const parts = userText.split(/\s+/);
+            const minutes = parts[1] ? Math.max(1, Math.min(60, Number(parts[1]))) : 5;
+            if (Number.isNaN(minutes)) {
+                await message.reply("usage: `!unlock <minutes>` (default 5, max 60)");
+                return;
+            }
+
+            const expiresAt = unlockManager.unlock(message.author.id, minutes * 60_000);
+            const expiresIn = new Date(expiresAt).toLocaleDateString();
+            await message.reply(
+                `🔓 destructive tools unlocked for ${minutes} minute${minutes === 1 ? "" : "s"} ` +
+                `(until ${expiresIn})`,
+            );
+
+            return;
+        }
+
+        if (userText === "!lock") {
+            unlockManager.lock(message.author.id);
+            await message.reply("🔒 destructive tools locked");
+            return;
+        }
+
+        if (userText === "!confirm") {
+            const pending = confirmationQueue.approve(message.author.id);
+            if (!pending) {
+                await message.reply("nothing pending to confirm");
+                return;
+            }
+
+            // Execute the approved action directly. We bypass the agent for this —
+            // the model has already proposed it, the user has approved it.
+            const tool = getTools().find((t) => t.name === pending.toolName);
+            if (!tool) {
+                await message.reply(`error: tool '${pending.toolName}' not found`);
+                return;
+            }
+
+            try {
+                if ("sendTyping" in message.channel) {
+                    message.channel.sendTyping().catch(() => { });
+                }
+
+                const result = await tool.execute(pending.id, pending.args);
+                await message.reply(
+                    `✅ executed \`${pending.toolName}(${JSON.stringify(pending.args)})\`:\n\`\`\`\n${JSON.stringify(result, null, 2).slice(0, 1500)
+                    }\n\`\`\``,
+                );
+            } catch (err: any) {
+                await message.reply(`❌ execution failed: ${err.message}`);
+            }
+            return;
+        }
+
+        if (userText === "!cancel") {
+            const cancelled = confirmationQueue.reject(message.author.id);
+            await message.reply(cancelled ? "cancelled" : "nothing pending to cancel");
+            return;
+        }
+
+        if (userText === "!status") {
+            const unlocked = unlockManager.isUnlocked(message.author.id);
+            const remaining = unlockManager.remainingMs(message.author.id);
+            const pending = confirmationQueue.latest(message.author.id);
+            const lines = [
+                `unlock: ${unlocked ? `🔓 active (${Math.ceil(remaining / 60_000)}m remaining)` : "🔒 locked"}`,
+                pending
+                    ? `pending: ${pending.toolName}(${JSON.stringify(pending.args)})`
+                    : "pending: none",
+            ];
+            await message.reply(lines.join("\n"));
             return;
         }
 
@@ -177,6 +253,7 @@ export async function startDiscordBot(options: BotOptions): Promise<void> {
     });
 
     await client.login(token);
+    return client;
 }
 
 // Discord caps individual messages at 2000 characters. We chunk on word

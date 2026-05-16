@@ -10,6 +10,9 @@ import { attachToolGuards } from "./safety/tool-guards";
 import { withRetry } from "./safety/retry";
 import { makeContextTransform } from "./context/transform";
 import { instrumentTool, instrumentStreamFn, getCurrentTraceId } from "./tracing/instrumentation";
+import { UnlockManager } from "./safety/unlock";
+import { ConfirmationQueue } from "./safety/confirmation";
+import { attachSafetyGate } from "./safety/safety-gate";
 
 export interface AgentBundle {
     agent: Agent;
@@ -19,6 +22,9 @@ export interface AgentBundle {
     setContext: (context: { trace_id: string; user_id: string }) => void;
     newTraceId: () => string;
 }
+
+export const unlockManager = new UnlockManager();
+export const confirmationQueue = new ConfirmationQueue();
 
 export async function createAgent(userId = "local", customLogger?: AgentLogger): Promise<AgentBundle> {
     const config = loadConfig();
@@ -127,6 +133,25 @@ export async function createAgent(userId = "local", customLogger?: AgentLogger):
                 },
             });
         }
+    });
+
+    attachSafetyGate(agent, {
+        userId,
+        unlockManager,
+        confirmationQueue,
+        onBlocked: ({ tool, reason, args }) => {
+            console.warn(`[safety] blocked ${tool}: ${reason}`);
+            logger.log({
+                timestamp: new Date().toISOString(),
+                trace_id: currentContext.trace_id,
+                user_id: userId,
+                event_type: "error",
+                data: {
+                    where: "safety_gate",
+                    message: `${reason}: ${tool}(${JSON.stringify(args).slice(0, 200)})`,
+                },
+            });
+        },
     });
 
     attachLogger(agent, logger, () => ({
